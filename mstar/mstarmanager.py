@@ -50,6 +50,17 @@ class MStarManager():
             n += 1
         return u / n
 
+
+    def get_precomputed(self, zs):
+        bands = list(self.m_spaces.keys())
+        m_size = len(self.m_spaces[bands[0]])
+        p = np.zeros((len(bands), m_size, len(zs))) * np.nan
+        for b, band in enumerate(bands):
+            for pos in range(m_size):
+                p[b, pos] = fun2(zs, *self.params[band][pos])
+        return p
+
+
     def get_single(self, mags, z, bands):
         """Calculate per-band mstar value for given magnitude values
         at a given redshift.

@@ -26,6 +26,8 @@ def get_all_fits(processor, band):
     for i in range(1, 20):
         z_i = z[m_dig == i]
         z_i = z_i[z_i < 1]
+        if len(z_i) < 100 and len(out) > 0:
+            fit_par = out[-1]
         hh = np.histogram(z_i, bins=100)
         z_pos = 0.5 * (hh[1][1:] + hh[1][:-1])
         try:
@@ -40,15 +42,20 @@ def get_all_fits(processor, band):
                     fit1 = curve_fit(fun2, z_pos, hh[0],
                                      p0=(*fit[0], 0),
                                      sigma=np.sqrt(hh[0]+1))
-                    print('+', i, len(z_i), fit1[0], np.sqrt(np.diag(fit1[1])))
+                    print('+', i, len(z_i), fit1[0], np.diag(fit1[1]))
                 except RuntimeError:
                     fit1 = (list(fit[0]) + [0.], fit[1])
                     print('-', i, len(z_i), fit1[0], np.sqrt(np.diag(fit1[1])))
-                fit_par = fit1[0]
+                if np.any(np.isinf(np.diag(fit1[1]))):
+                    print('...substitute', out[-1])
+                    fit_par = out[-1]
+                else:
+                    fit_par = fit1[0]
             else:
-                print(i, len(z_i), fit[0], np.sqrt(np.diag(fit[1])))
+                print(i, len(z_i), fit[0], np.diag(fit[1]))
                 fit_par = list(fit[0]) + [0.]
-            if np.any(np.isinf(np.diag(fit[1]))) and i > 0:
+            if np.any(np.isinf(np.diag(fit[1]))):
+                print('...substitute', out[-1])
                 fit_par = out[-1]
             out.append(fit_par)
             m_out_space.append(0.5 * (m_space[i - 1] + m_space[i]))

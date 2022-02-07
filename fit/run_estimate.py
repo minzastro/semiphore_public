@@ -9,6 +9,7 @@ import time
 import joblib
 import numpy as np
 from semiphore_public.utils.params import BANDS, LIMITS, EXTINCTIONS
+from semiphore_public.cuda import gpu
 import pandas as pd
 from numba import cuda
 import math
@@ -16,7 +17,7 @@ import warnings
 import argparse
 from semiphore_public.mstar.mstarmanager import MStarManager
 import logging
-import gpustat
+
 
 # create logger with 'spam_application'
 logger = logging.getLogger('semiphore_run_estimate')
@@ -31,24 +32,9 @@ ch.setFormatter(formatter)
 # add the handlers to the logger
 logger.addHandler(ch)
 
-SQRT_TWOPI = 2.506628274631
+
 MIN_WIDTH = 0.02
 
-
-def meminfo():
-    info = gpustat.GPUStatCollection.new_query().gpus[0]
-    logger.info("============== Memory: %s MB", info.memory_used)
-    return info.memory_used
-
-
-def get_total_gpu_memory():
-    info = gpustat.GPUStatCollection.new_query().gpus[0]
-    return info.memory_total
-
-
-def get_size_for_cuda(num_seds, num_bands, num_redshifts=50):
-    return 8 * (3 + 2 * num_bands +
-                num_redshifts * (2 + 2 * num_seds + num_bands)) / (1024**2)
 
 
 @cuda.jit
@@ -98,8 +84,10 @@ def get_p_zyt(mag, err, mhat, w, sed, sed_err, output):
         output[pos, z, comp] = p
 
 
+#TODO: use precomputed prior values here:
 @cuda.jit
-def cuda_prior_direct(z_in, mag, m_spaces, params, prior):
+def cuda_prior_direct(z_in, mag, m_spaces, m_direct, prior):
+    #def cuda_prior_direct(z_in, mag, m_spaces, params, prior):
     tx = cuda.threadIdx.x
     ty = cuda.threadIdx.y
     # Block id in a 1D grid
@@ -114,25 +102,12 @@ def cuda_prior_direct(z_in, mag, m_spaces, params, prior):
             prior[pos, band, i] = np.nan
         return
     bb = mag[pos, band]
-    mpos = 0
-    while m_spaces[band][mpos] < bb and mpos < len(m_spaces[band]) - 1:
-        mpos += 1
-    mpos -= 1
-    p = params[band][mpos]
-    a = p[0]
-    b = p[1]
-    n = abs(p[2])
-    h = abs(p[3])
-    s = abs(p[4])
-    sum = 0
-    for i, z in enumerate(z_in):
-        tmp = math.pow(z / b, a)
-        prior[pos, band, i] = \
-            n * tmp * math.exp(-tmp) + h + \
-            s / (1 + math.exp(100 * (z - b)))
-        sum += prior[pos, band][i]
-    for i, z in enumerate(z_in):
-        prior[pos, band, i] = len(z_in) * prior[pos, band, i] / sum
+    mpos = len(m_spaces[band]) - 1
+    while m_spaces[band][mpos] >= bb and mpos >= 0:
+        mpos -= 1
+    mpos += 1
+    for i in range(len(z_in)):
+        prior[pos, band, i] = m_direct[band, mpos, i]
 
 
 @cuda.jit
@@ -239,7 +214,8 @@ ecolumns = []
 names = args.catalogs.split(',')
 nseds = args.nsed
 if args.calibrate is None:
-    cfilename = '../calibrations/seds/%s_%sseds.joblib' % ('_'.join(names), nseds)
+    cfilename = '../calibrations/seds/%s_%sseds.joblib' % ('_'.join(names),
+                                                           nseds)
 else:
     cfilename = args.calibrate
 
@@ -278,7 +254,10 @@ for name in names:
     for column, limit, extinction in zip(BANDS[name], LIMITS[name],
                                          EXTINCTIONS[name]):
         column = '%s_%s' % (name.lower(), column.lower())
-        mask = (mags[column] > limit) | (errs[f'e_{column}'] > 0.5) | (errs[f'e_{column}'] < 1e-6)
+        # Mask below-limit measurements, large and zero uncertainties.
+        mask = (mags[column] > limit) | \
+               (errs[f'e_{column}'] > 0.5) | \
+               (errs[f'e_{column}'] < 1e-6)
         mags.loc[mask, column] = np.nan
         if 'extinction' in data.columns:
             mags[column] -= data['extinction'] * extinction
@@ -303,14 +282,15 @@ cu_sederr = cuda.to_device(sed_errs)
 
 sed_count = seds.shape[1]
 mag_count = seds.shape[2]
-batch_size = int(0.75 * get_total_gpu_memory() / get_size_for_cuda(sed_count,
-                                                                   mag_count,
-                                                                   seds.shape[0]))
-block = 512
-grid_size = 2**min(15, int(np.ceil(np.log2(batch_size) * 0.5)))
-batch_size = min(512 * grid_size, batch_size)
-logger.info("GPU configuration: batch size = %s / block size = %s / grid size = %s", batch_size, block, grid_size)
+redshift_count = seds.shape[0]
+# Calculate batch and grid sizes depending on GPU memory
+batch_size, grid_size, block = gpu.get_batch_and_grid(sed_count,
+                                                      mag_count,
+                                                      redshift_count)
+logger.info("GPU configuration: batch size = %s / block size = %s "
+            "/ grid size = %s", batch_size, block, grid_size)
 if len(all_mags) > batch_size and args.quick:
+    # For a quick run we use only 1 randomly composed batch.
     choice = np.random.choice(np.arange(len(all_mags)), batch_size,
                               replace=False)
     zs = zs[choice]
@@ -325,25 +305,20 @@ logger.info("%s data points in the catalogue selected for processing" %
 time_start_processing = time.process_time()
 total_batches = int(np.ceil(len(all_mags) / batch_size))
 df_result = None
-cu_m_star_params = cuda.to_device(msm.get_params_as_array())
+#cu_m_star_params = cuda.to_device(msm.get_params_as_array())
 cu_m_star_m_spaces = cuda.to_device(msm.get_m_spaces_as_array())
+pre = msm.get_precomputed(z)
+cu_m_star_pre = cuda.to_device(msm.get_precomputed(z))
 cu_p_values = cuda.device_array((batch_size, len(z)))
-cu_mhat = cuda.to_device(np.zeros((batch_size, len(z),
-                                   sed_count)))
-cu_p = cuda.to_device(np.empty((batch_size, len(z), sed_count)))
+cu_mhat = cuda.device_array((batch_size, len(z), sed_count))
+cu_p = cuda.device_array((batch_size, len(z), sed_count))
 cu_z = cuda.to_device(z)
-cu_m_prior = cuda.to_device(np.zeros((batch_size,
-                                      mag_count,
-                                      len(z))))
-cu_m_prior_reduced = cuda.to_device(np.zeros((batch_size, len(z))))
+cu_m_prior = cuda.device_array((batch_size, mag_count, len(z)))
+cu_m_prior_reduced = cuda.device_array((batch_size, len(z)))
 cu_z_estimate = cuda.device_array(batch_size)
 cu_p_est = cuda.device_array(batch_size)
 cu_p_est_noprior = cuda.device_array(batch_size)
 cu_sed_estimate = cuda.device_array(batch_size, dtype=int)
-logger.info('Required memory %s' % (batch_size *
-                                    get_size_for_cuda(sed_count,
-                                                      mag_count)))
-
 # Configure the blocks
 threadsperblock = block
 blockspergrid_x = grid_size
@@ -371,25 +346,21 @@ for i in range(total_batches):
     get_p_zyt[blockspergrid, threadsperblock](cu_mags, cu_errs, cu_mhat,
                                               cu_w, cu_sed, cu_sederr,
                                               cu_p)
-    p = cu_p.copy_to_host()
     cuda.synchronize()
-    meminfo()
-    m = np.argmax(p, axis=1)
+    gpu.meminfo(logger)
     output = []
     warnings.simplefilter('ignore', np.RankWarning)
 
     logger.info("Calculating priors")
     cuda_prior_direct[blockspergrid, threadsperblock](cu_z, cu_mags,
                                                       cu_m_star_m_spaces,
-                                                      cu_m_star_params,
+                                                      cu_m_star_pre,
                                                       cu_m_prior)
     cuda.synchronize()
 
     logger.info("Reducing priors")
     reduce_prior[blockspergrid, threadsperblock](cu_m_prior,
                                                  cu_m_prior_reduced)
-    cuda.synchronize()
-    logger.info("Allocating")
     cuda.synchronize()
     logger.info("Finding photo zs")  # Why is it slow?
     find_photo_z[blockspergrid_x, threadsperblock](cu_p, cu_m_prior_reduced,

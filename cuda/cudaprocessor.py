@@ -22,7 +22,6 @@ class CudaProcessor():
                              for b in BANDS[t]]
             self.ecolumns += ['e_%s_%s' % (t.lower(), b.lower())
                               for b in BANDS[t]]
-        print(self.columns)
 
     def load_data(self, filename=None, min_ok_mags=3):
         if filename is None:
@@ -59,7 +58,6 @@ class CudaProcessor():
         self.zs = np.array(self.zs[mask])
         self.ind = np.digitize(self.zs, self.z - 0.01) - 1
         self.counts = np.unique(self.ind, return_counts=True)
-        print(self.counts)
 
     def iterate_data(self, size):
         i0 = 0
