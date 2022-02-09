@@ -2,7 +2,7 @@ import numpy as np
 from astropy.stats import sigma_clip
 
 
-def filter_data(zdata, column_count):
+def filter_data(zdata):
     """Create sigma-clipping and no NaNs mask from the data.
 
     Args:
@@ -12,6 +12,7 @@ def filter_data(zdata, column_count):
     Returns:
         [bool]: mask to apply
     """
+    column_count = zdata.shape[1]
     mask = np.ones(len(zdata), dtype=bool)
     for c in range(column_count - 1):
         mask1 = sigma_clip(zdata[:, c] - zdata[:, c+1],

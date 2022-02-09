@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 import numpy as np
-
+""" Functions used in calculating m_star. """
 
 def fun(x, a, b, n, h):
     return np.abs(n) * np.power(x / b, a) * np.exp(-np.power(x/b, a)) + \

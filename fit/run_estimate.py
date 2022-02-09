@@ -36,7 +36,6 @@ logger.addHandler(ch)
 MIN_WIDTH = 0.02
 
 
-
 @cuda.jit
 def get_mhat(mag, err, sed, sed_err, output):
     # Thread id in a 1D block
@@ -84,10 +83,8 @@ def get_p_zyt(mag, err, mhat, w, sed, sed_err, output):
         output[pos, z, comp] = p
 
 
-#TODO: use precomputed prior values here:
 @cuda.jit
 def cuda_prior_direct(z_in, mag, m_spaces, m_direct, prior):
-    #def cuda_prior_direct(z_in, mag, m_spaces, params, prior):
     tx = cuda.threadIdx.x
     ty = cuda.threadIdx.y
     # Block id in a 1D grid
@@ -284,9 +281,9 @@ sed_count = seds.shape[1]
 mag_count = seds.shape[2]
 redshift_count = seds.shape[0]
 # Calculate batch and grid sizes depending on GPU memory
-batch_size, grid_size, block = gpu.get_batch_and_grid(sed_count,
-                                                      mag_count,
-                                                      redshift_count)
+batch_size, grid_size, block = gpu.get_photoz_gpu_dims(sed_count,
+                                                       mag_count,
+                                                       redshift_count)
 logger.info("GPU configuration: batch size = %s / block size = %s "
             "/ grid size = %s", batch_size, block, grid_size)
 if len(all_mags) > batch_size and args.quick:
@@ -305,9 +302,8 @@ logger.info("%s data points in the catalogue selected for processing" %
 time_start_processing = time.process_time()
 total_batches = int(np.ceil(len(all_mags) / batch_size))
 df_result = None
-#cu_m_star_params = cuda.to_device(msm.get_params_as_array())
+
 cu_m_star_m_spaces = cuda.to_device(msm.get_m_spaces_as_array())
-pre = msm.get_precomputed(z)
 cu_m_star_pre = cuda.to_device(msm.get_precomputed(z))
 cu_p_values = cuda.device_array((batch_size, len(z)))
 cu_mhat = cuda.device_array((batch_size, len(z), sed_count))

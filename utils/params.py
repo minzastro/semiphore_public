@@ -72,10 +72,6 @@ LIMITS = {
     'Teddy': [99, 99, 99, 99, 99],
 }
 
-#for key, value in EXTINCTIONS.items():
-#    EXTINCTIONS[key] = [v / A_K for v in value]
-
-
 def collect(names):
     columns = []
     ecolumns = []

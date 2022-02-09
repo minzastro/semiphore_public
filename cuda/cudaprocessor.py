@@ -67,7 +67,6 @@ class CudaProcessor():
         while i <= self.counts[0].max():
             if i in self.counts[0]:
                 cpos = self.counts[0].searchsorted(i)
-                #print('...%s : %s' % (i, self.counts[1][cpos]))
                 count += self.counts[1][cpos]
                 i_weighted += i * self.counts[1][cpos]
                 if count > size:
@@ -81,34 +80,41 @@ class CudaProcessor():
             while count < size:
                 i0 -= 1
                 if i0 in self.counts[0]:
-                    #print('...%s : %s' % (i0, self.counts[1][cpos]))
                     cpos = self.counts[0].searchsorted(i0)
                     count += self.counts[1][cpos]
                     i_weighted += i0 * self.counts[1][cpos]
             yield i_weighted / count, *self.get_data_for_zs(
                 np.arange(i0, i + 1, dtype=int))
 
-    def get_data_for_zs(self, ii_arr):
-        mask = np.in1d(self.ind, ii_arr)
+    def get_data_for_zs(self, bins_array):
+        """Collect data for objects for given redshift bins.
+
+        Args:
+            bins_array (int[]): list of redshift bins
+
+        Returns:
+            Magnitude and errors for objects.
+        """
+        mask = np.in1d(self.ind, bins_array)
         mags = self.mags[mask]
         errs = self.errs[mask]
-        #print('='*20, ii_arr)
-        #print('Objects %s' % mags.shape[0], end='->')
-        if len(mags) > 256**2 - 1:
-            choice = np.arange(256 ** 2 - 1, dtype=int)
-            mags = mags[choice]
-            errs = errs[choice]
-        elif len(mags) < 100:
+        if len(mags) < 100:
             return mags, errs
-        # TODO: remove 2nd parameter:
-        mask = filter_data(mags, mags.shape[1])
+        mask = filter_data(mags)
         mags = mags[mask]
         errs = errs[mask]
-        #print(mags.shape[0])
         return mags, errs
 
-    def get_data_for_z(self, ii):
-        return self.get_data_for_zs([ii])
+    def get_data_for_z(self, redshift_bin):
+        """Collect data for a single redshift bin.
+
+        Args:
+            redshift_bin (int): redshift bin, within z grid
+
+        Returns:
+            Magnitude and errors of object within the redshift bin.
+        """
+        return self.get_data_for_zs([redshift_bin])
 
     def run_on_data(self, mags, errs, n_seds=None, full_output=False,
                     custom_params=None):
@@ -127,7 +133,21 @@ class CudaProcessor():
             result = result[:4]
         return result, len(mags), fitter
 
-    def run_single_z(self, ii, n_seds=None, full_output=False,
+    def run_single_z(self, redshift_bin, n_seds=None, full_output=False,
                      custom_params=None):
-        mags, errs = self.get_data_for_z(ii)
+        """Collect data and run
+
+        Args:
+            redshift_bin (int): redshift bin, within z grid
+            n_seds (int, optional): Number of SEDs to fit.
+            full_output (bool, optional):
+                Wether to output intermediat results. Defaults to False.
+            custom_params (float[], optional): Custom initial params.
+
+        Returns:
+            self.run_on_data output.
+        """
+        if n_seds is None:
+            n_seds = self.n_seds
+        mags, errs = self.get_data_for_z(redshift_bin)
         return self.run_on_data(mags, errs, n_seds, full_output, custom_params)

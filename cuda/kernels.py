@@ -110,3 +110,50 @@ def update_params(p2, p3, mags, mhat, mu, tmu, tsigma):
                  mu[component, band])**2 * \
                 p3[i, component, band]
 
+
+@cuda.jit
+def balance_params(p_zyt, p2, tw, tmu, tsigma):
+    component, band = cuda.grid(2)
+    if component >= tmu.shape[0] or band >= tmu.shape[1]:
+        return
+    count = 0
+    total = 0
+    for i in range(p_zyt.shape[0]):
+        if not math.isnan(p_zyt[i, component]):
+            count += 1
+            total += p_zyt[i, component]
+    tw[component] = total / count
+
+    count = 0
+    total = 0
+    for i in range(p2.shape[0]):
+        if not math.isnan(p2[i, component, band]):
+            count += 1
+            total += p2[i, component, band]
+    if count > 0:
+        tmu[component, band] = tmu[component, band] / total
+        tsigma[component, band] = math.sqrt(tsigma[component, band] / total)
+
+@cuda.jit
+def rebalance_params(tw, tmu, tsigma, min_sigma):
+    pos = cuda.grid(1)
+    if pos >= len(tw):
+        return
+    if pos == 0:
+        total = 0
+        for i in range(len(tw)):
+            total += tw[i]
+        for i in range(len(tw)):
+            tw[i] = tw[i] / total
+    total = 0
+    count = 0
+    for i in range(tmu.shape[1]):
+        if not math.isnan(tmu[pos, i]):
+            total += tmu[pos, i]
+            count += 1
+    for i in range(tmu.shape[1]):
+        tmu[pos, i] -= total / count
+        if tsigma[pos, i] < min_sigma:
+            tsigma[pos, i] = min_sigma
+
+
