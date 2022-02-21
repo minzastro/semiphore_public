@@ -128,7 +128,6 @@ if __name__ == '__main__':
             continue
         old_norm = results[ii][2] / sizes[ii]
         if results[ii + 1][2] / sizes[ii + 1] > old_norm:
-            print(izs[ii])
             logger.info("Backward run, redshift=%.2f",
                         processor.z[int(izs[ii])])
             mags, errs = processor.get_data_for_zs(izs[ii])
@@ -154,7 +153,7 @@ if __name__ == '__main__':
               'err': np.zeros(sed_shape),
               'l_values': np.zeros(len(izs)),
               'iterations': np.zeros(len(izs)),
-              'sizes': np.array(len(izs)),
+              'sizes': sizes,
               }
     w = np.array([results[ii][0][0] for ii in range(len(results))])
     sed = np.array([results[ii][0][1] for ii in range(len(results))])
@@ -163,7 +162,6 @@ if __name__ == '__main__':
                                      for ii in range(len(results))])
     output['l_values'] = np.array([results[ii][2]
                                    for ii in range(len(results))])
-    output['sizes'] = sizes
     ind = np.argsort(w)
 
     logger.info("Reordering...")

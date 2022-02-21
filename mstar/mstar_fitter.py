@@ -84,16 +84,16 @@ if __name__ == '__main__':
         store[processor.columns[i]] = (m_space, out, x, y)
         X = m_space
         Y = np.abs(out[:, 0])
-        l = ax[0].plot(X, Y, label=processor.columns[i])
+        line = ax[0].plot(X, Y, label=processor.columns[i])
 
         Y = np.abs(out[:, 1])
-        ax[1].plot(X, Y, color=l[0].get_color())
+        ax[1].plot(X, Y, color=line[0].get_color())
 
         Y = np.abs(out[:, 3] / out[:, 2])
-        ax[2].plot(X, Y, color=l[0].get_color())
+        ax[2].plot(X, Y, color=line[0].get_color())
 
         Y = np.abs(out[:, 4])
-        ax[3].plot(X, Y, color=l[0].get_color())
+        ax[3].plot(X, Y, color=line[0].get_color())
     ax[0].legend()
     ax[2].set_yscale('log')
     joblib.dump(store, '../calibrations/mstar/%s.joblib' % survey)

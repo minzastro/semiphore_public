@@ -102,7 +102,7 @@ def cuda_prior_direct(z_in, mag, m_spaces, m_direct, prior):
     mpos = len(m_spaces[band]) - 1
     while m_spaces[band][mpos] >= bb and mpos >= 0:
         mpos -= 1
-    mpos += 1
+    #mpos += 1
     for i in range(len(z_in)):
         prior[pos, band, i] = m_direct[band, mpos, i]
 
@@ -125,7 +125,15 @@ def reduce_prior(prior, sum_prior):
         if pp[b] > 0:
             sum += math.log(pp[b])
             count += 1
-    sum_prior[pos, i_z] = sum / count
+    #sum_prior[pos, i_z] = sum / count
+    place = pp.shape[0] // 2
+    step = 1
+    sign = -1
+    while math.isnan(pp[place]):
+        place += step
+        step = sign * (abs(step) + 1)
+        sign = - sign
+    sum_prior[pos, i_z] = math.log(pp[place])
 
 
 @cuda.jit

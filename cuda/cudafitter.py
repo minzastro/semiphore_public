@@ -20,18 +20,18 @@ class CudaFitter():
     PARAM_PRECISION = 1e-5
 
     def __init__(self, magnitudes, errs, sed_count=2):
-        self.logger = logging.getLogger("Fit_internals")
+        self.logger = logging.getLogger('Fit_internals')
         self.logger.setLevel(logging.INFO)
 
         self.mags = magnitudes
         self.errs = errs
         self.max_size, _, _ = get_fit_gpu_dims(sed_count, self.mags.shape[1])
         if len(self.mags) > self.max_size - 1:
-            self.logger.info("Too many objects, cutting to %d", self.max_size)
+            self.logger.info('Too many objects, cutting to %d', self.max_size)
             choice = np.arange(self.max_size - 1, dtype=int)
             self.mags = self.mags[choice]
             self.errs = self.errs[choice]
-        self.logger.info("Running SED fit on %d objects", self.mags.shape[0])
+        self.logger.info('Running SED fit on %d objects', self.mags.shape[0])
         self.points = magnitudes.shape[0]
         self.bands = magnitudes.shape[1]
         self.sed_count = sed_count
@@ -147,9 +147,9 @@ class CudaFitter():
             fill_2and3[blockspergrid, threadsperblock, self.stream](
                 cu_p_zyt, p2, p3,
                 cu_sederr, self.cu_errs)
-            p2x = p2.copy_to_host(stream=self.stream)
-            sum1x = np.nansum(p2x, axis=0)
-            sum1x[~(sum1x > 0)] = np.inf
+            p2_host = p2.copy_to_host(stream=self.stream)
+            sum_p2_host = np.nansum(p2_host, axis=0)
+            sum_p2_host[~(sum_p2_host > 0)] = np.inf
             self.stream.synchronize()
             self.logger.debug('Update params')
             update_params[blockspergrid, threadsperblock, self.stream](
@@ -163,10 +163,10 @@ class CudaFitter():
             tw = cu_w.copy_to_host(stream=self.stream)
             tw = tw / tw.sum()
             tmu = cu_tmu.copy_to_host(stream=self.stream)
-            tmu = tmu / sum1x
+            tmu = tmu / sum_p2_host
             tmu -= np.nanmean(tmu, axis=1)[:, np.newaxis]
             tsigma = cu_tsigma.copy_to_host(stream=self.stream)
-            tsigma = np.sqrt(tsigma / sum1x)
+            tsigma = np.sqrt(tsigma / sum_p2_host)
             tsigma[tsigma < self.MIN_SIGMA] = self.MIN_SIGMA
             params = [np.copy(p) for p in self.params]
             self.params = [np.copy(tw),
@@ -179,5 +179,5 @@ class CudaFitter():
             output.append([tw, tmu, tsigma, l_value])
             self.logger.debug('Ready for next iteration')
 
-        self.logger.info("Finished after %d iterations", iterations)
+        self.logger.info('Finished after %d iterations', iterations)
         return self.params, iterations, l_value, output
