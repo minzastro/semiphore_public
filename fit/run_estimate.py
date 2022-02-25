@@ -67,20 +67,21 @@ def get_p_zyt(mag, err, mhat, w, sed, sed_err, output):
     # Block id in a 1D grid
     bx = cuda.blockIdx.x
     by = cuda.blockIdx.y
-    z = ty * cuda.blockDim.x + tx
+    blockPos = ty * cuda.blockDim.x + tx
+    z = blockPos // sed.shape[1]
+    comp = blockPos % sed.shape[1]
     pos = by * cuda.gridDim.x + bx
-    if pos >= mag.shape[0] or z >= sed.shape[0]:
+    if pos >= mag.shape[0] or z >= sed.shape[0] or comp >= sed.shape[1]:
         return
-    for comp in range(sed.shape[1]):
-        p = math.log(w[z, comp])
-        for b in range(sed.shape[2]):
-            if not math.isnan(mag[pos, b]) and not math.isnan(err[pos, b]):
-                delta2 = err[pos, b]**2 + sed_err[z, comp, b]**2
-                p += -0.5 * \
-                    (mag[pos, b] - mhat[pos, z, comp] - sed[z, comp, b]) * \
-                    (mag[pos, b] - mhat[pos, z, comp] - sed[z, comp, b]) \
-                    / delta2 - 0.5 * math.log(delta2)
-        output[pos, z, comp] = p
+    p = math.log(w[z, comp])
+    for b in range(sed.shape[2]):
+        if not math.isnan(mag[pos, b]) and not math.isnan(err[pos, b]):
+            delta2 = err[pos, b]**2 + sed_err[z, comp, b]**2
+            p += -0.5 * \
+                (mag[pos, b] - mhat[pos, z, comp] - sed[z, comp, b]) * \
+                (mag[pos, b] - mhat[pos, z, comp] - sed[z, comp, b]) \
+                / delta2 - 0.5 * math.log(delta2)
+    output[pos, z, comp] = p
 
 
 @cuda.jit
@@ -108,34 +109,6 @@ def cuda_prior_direct(mag, sed, mhat, m_spaces, m_direct, prior):
         elif mpos >= m_spaces.shape[1]:
             mpos = m_spaces.shape[1] - 1
         prior[pos, ised, i_z] = math.log(m_direct[band, mpos, i_z])
-
-
-@cuda.jit
-def reduce_prior(prior, sum_prior):
-    tx = cuda.threadIdx.x
-    ty = cuda.threadIdx.y
-    # Block id in a 1D grid
-    bx = cuda.blockIdx.x
-    by = cuda.blockIdx.y
-    i_z = ty * cuda.blockDim.x + tx
-    pos = by * cuda.gridDim.x + bx
-    if pos >= prior.shape[0] or i_z >= prior.shape[2]:
-        return
-    pp = prior[pos, :, i_z]
-    sum = 0
-    count = 0
-    for b in range(pp.shape[0]):
-        if pp[b] > 0:
-            sum += math.log(pp[b])
-            count += 1
-    place = pp.shape[0] // 2
-    step = 1
-    sign = -1
-    while math.isnan(pp[place]):
-        place += step
-        step = sign * (abs(step) + 1)
-        sign = - sign
-    sum_prior[pos, i_z] = math.log(pp[place])
 
 
 @cuda.jit
@@ -362,12 +335,8 @@ for i in range(total_batches):
                                                       cu_m_star_m_spaces,
                                                       cu_m_star_pre,
                                                       cu_m_prior)
-    #cuda.synchronize()
+    cuda.synchronize()
 
-#    logger.info("Reducing priors")
-#    reduce_prior[blockspergrid, threadsperblock](cu_m_prior,
-#                                                 cu_m_prior_reduced)
-#    cuda.synchronize()
     logger.info("Finding photo zs")  # Why is it slow?
     find_photo_z[blockspergrid_x, threadsperblock](cu_p, cu_m_prior,
                                                    cu_p_values, cu_z,
