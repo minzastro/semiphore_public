@@ -92,20 +92,22 @@ def cuda_prior_direct(mag, sed, mhat, m_spaces, m_direct, prior):
     by = cuda.blockIdx.y
     i_z = ty * cuda.blockDim.x + tx
     pos = by * cuda.gridDim.x + bx
-    if pos >= mhat.shape[0] or i_z >= mhat.shape[1]:
+    if pos >= mag.shape[0] or i_z >= sed.shape[0]:
         return
-    band = mag_count // 2
-    for ised in range(sed.shape[2]):
-    if math.isnan(mag[pos, band]):
-            band_mag = mhat[pos, band, ised] + sed[i_z, ised, band]
+    band = sed.shape[2] // 2
+    for ised in range(sed.shape[1]):
+        if math.isnan(mag[pos, band]):
+            band_mag = mhat[pos, i_z, ised] + sed[i_z, ised, band]
         else:
             band_mag = mag[pos, band]
-    mpos = len(m_spaces[band]) - 1
-        while m_spaces[band][mpos] >= band_mag and mpos >= 0:
-        mpos -= 1
-    #mpos += 1
-        prior[pos, ised, i_z] = m_direct[band, mpos, i_z]
-
+        mpos = int(
+            (band_mag - m_spaces[band][0]) * (len(m_spaces[band]) - 1)
+            / (m_spaces[band][-1] - m_spaces[band][0]))
+        if mpos < 0:
+            mpos = 0
+        elif mpos >= m_spaces.shape[1]:
+            mpos = m_spaces.shape[1] - 1
+        prior[pos, ised, i_z] = math.log(m_direct[band, mpos, i_z])
 
 
 @cuda.jit
@@ -158,7 +160,7 @@ def find_photo_z(p, prior, p_values, z, z_est, sed_est, p_est, p_est_noprior):
         for j in range(pp.shape[1]):
             if pp[i, j] > sed_value:
                 sed_index = j
-                sed_value = pp[i, j] + prior[pos, i]
+                sed_value = pp[i, j] + prior[pos, j, i]
         p_values[pos, i] = sed_value
         if sed_value >= best_p_value:
             best_p_value = sed_value
@@ -184,7 +186,7 @@ def find_photo_z(p, prior, p_values, z, z_est, sed_est, p_est, p_est_noprior):
     z_est[pos] = est
     sed_est[pos] = best_sed_index
     p_est[pos] = best_p_value
-    p_est_noprior[pos] = best_p_value - prior[pos, best_p_index]
+    p_est_noprior[pos] = best_p_value - prior[pos, best_sed_index, best_p_index]
 
 
 parser = argparse.ArgumentParser(description="""
@@ -313,12 +315,12 @@ df_result = None
 
 cu_m_star_m_spaces = cuda.to_device(msm.get_m_spaces_as_array())
 cu_m_star_pre = cuda.to_device(msm.get_precomputed(z))
-cu_p_values = cuda.device_array((batch_size, len(z)))
-cu_mhat = cuda.device_array((batch_size, len(z), sed_count))
-cu_p = cuda.device_array((batch_size, len(z), sed_count))
+cu_p_values = cuda.device_array((batch_size, redshift_count))
+cu_mhat = cuda.device_array((batch_size, redshift_count, sed_count))
+cu_p = cuda.device_array((batch_size, redshift_count, sed_count))
 cu_z = cuda.to_device(z)
-cu_m_prior = cuda.device_array((batch_size, mag_count, len(z)))
-cu_m_prior_reduced = cuda.device_array((batch_size, len(z)))
+cu_m_prior = cuda.device_array((batch_size, sed_count, redshift_count))
+#cu_m_prior_reduced = cuda.device_array((batch_size, len(z)))
 cu_z_estimate = cuda.device_array(batch_size)
 cu_p_est = cuda.device_array(batch_size)
 cu_p_est_noprior = cuda.device_array(batch_size)
@@ -351,7 +353,7 @@ for i in range(total_batches):
                                               cu_w, cu_sed, cu_sederr,
                                               cu_p)
     cuda.synchronize()
-    gpu.meminfo(logger)
+    #gpu.meminfo(logger)
     output = []
     warnings.simplefilter('ignore', np.RankWarning)
 
@@ -360,14 +362,14 @@ for i in range(total_batches):
                                                       cu_m_star_m_spaces,
                                                       cu_m_star_pre,
                                                       cu_m_prior)
-    cuda.synchronize()
+    #cuda.synchronize()
 
-    logger.info("Reducing priors")
-    reduce_prior[blockspergrid, threadsperblock](cu_m_prior,
-                                                 cu_m_prior_reduced)
-    cuda.synchronize()
+#    logger.info("Reducing priors")
+#    reduce_prior[blockspergrid, threadsperblock](cu_m_prior,
+#                                                 cu_m_prior_reduced)
+#    cuda.synchronize()
     logger.info("Finding photo zs")  # Why is it slow?
-    find_photo_z[blockspergrid_x, threadsperblock](cu_p, cu_m_prior_reduced,
+    find_photo_z[blockspergrid_x, threadsperblock](cu_p, cu_m_prior,
                                                    cu_p_values, cu_z,
                                                    cu_z_estimate,
                                                    cu_sed_estimate,
