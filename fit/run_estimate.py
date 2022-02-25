@@ -84,27 +84,28 @@ def get_p_zyt(mag, err, mhat, w, sed, sed_err, output):
 
 
 @cuda.jit
-def cuda_prior_direct(z_in, mag, m_spaces, m_direct, prior):
+def cuda_prior_direct(mag, sed, mhat, m_spaces, m_direct, prior):
     tx = cuda.threadIdx.x
     ty = cuda.threadIdx.y
     # Block id in a 1D grid
     bx = cuda.blockIdx.x
     by = cuda.blockIdx.y
-    band = ty * cuda.blockDim.x + tx
+    i_z = ty * cuda.blockDim.x + tx
     pos = by * cuda.gridDim.x + bx
-    if pos >= mag.shape[0] or band >= mag.shape[1]:
+    if pos >= mhat.shape[0] or i_z >= mhat.shape[1]:
         return
+    band = mag_count // 2
+    for ised in range(sed.shape[2]):
     if math.isnan(mag[pos, band]):
-        for i, z in enumerate(z_in):
-            prior[pos, band, i] = np.nan
-        return
-    bb = mag[pos, band]
+            band_mag = mhat[pos, band, ised] + sed[i_z, ised, band]
+        else:
+            band_mag = mag[pos, band]
     mpos = len(m_spaces[band]) - 1
-    while m_spaces[band][mpos] >= bb and mpos >= 0:
+        while m_spaces[band][mpos] >= band_mag and mpos >= 0:
         mpos -= 1
     #mpos += 1
-    for i in range(len(z_in)):
-        prior[pos, band, i] = m_direct[band, mpos, i]
+        prior[pos, ised, i_z] = m_direct[band, mpos, i_z]
+
 
 
 @cuda.jit
@@ -125,7 +126,6 @@ def reduce_prior(prior, sum_prior):
         if pp[b] > 0:
             sum += math.log(pp[b])
             count += 1
-    #sum_prior[pos, i_z] = sum / count
     place = pp.shape[0] // 2
     step = 1
     sign = -1
@@ -356,7 +356,7 @@ for i in range(total_batches):
     warnings.simplefilter('ignore', np.RankWarning)
 
     logger.info("Calculating priors")
-    cuda_prior_direct[blockspergrid, threadsperblock](cu_z, cu_mags,
+    cuda_prior_direct[blockspergrid, threadsperblock](cu_mags, cu_sed, cu_mhat,
                                                       cu_m_star_m_spaces,
                                                       cu_m_star_pre,
                                                       cu_m_prior)
