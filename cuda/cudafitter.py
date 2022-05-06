@@ -160,7 +160,7 @@ class CudaFitter():
             self.logger.debug('ALmost there')
             p_zyt = cu_p_zyt.copy_to_host(stream=self.stream)
             tw = np.nanmean(p_zyt, axis=0)
-            tw = cu_w.copy_to_host(stream=self.stream)
+            #tw = cu_w.copy_to_host(stream=self.stream)
             tw = tw / tw.sum()
             tmu = cu_tmu.copy_to_host(stream=self.stream)
             tmu = tmu / sum_p2_host

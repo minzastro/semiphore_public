@@ -293,7 +293,6 @@ cu_mhat = cuda.device_array((batch_size, redshift_count, sed_count))
 cu_p = cuda.device_array((batch_size, redshift_count, sed_count))
 cu_z = cuda.to_device(z)
 cu_m_prior = cuda.device_array((batch_size, sed_count, redshift_count))
-#cu_m_prior_reduced = cuda.device_array((batch_size, len(z)))
 cu_z_estimate = cuda.device_array(batch_size)
 cu_p_est = cuda.device_array(batch_size)
 cu_p_est_noprior = cuda.device_array(batch_size)
@@ -364,7 +363,7 @@ time_processing = time.process_time() - time_start_processing
 logger.info(
     "Processing runtime %.2f second, performance %.1f objects per second" % (
         time_processing, len(all_mags) / time_processing))
-logger.info("Saving result")  # Why is it slow?
+logger.info("Saving result")
 if args.output is None:
     if args.csv:
         ext = 'csv'
