@@ -100,7 +100,7 @@ class CudaProcessor():
         errs = self.errs[mask]
         if len(mags) < 100:
             return mags, errs
-        mask = filter_data(mags)
+        mask = filter_data(mags, sigma=6)
         mags = mags[mask]
         errs = errs[mask]
         return mags, errs
