@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
-import os
 import argparse
+import os
+
 from semiphore_public.utils import stats
 
 parser = argparse.ArgumentParser(description="""
@@ -28,6 +29,3 @@ elif args.verbose:
 else:
     result.remove_columns(['Count'])
     print(result.to_pandas().to_latex(float_format='%.2f', index=False))
-
-
-

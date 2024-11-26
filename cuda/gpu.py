@@ -1,6 +1,9 @@
 import gpustat
 import numpy as np
 
+"""
+GPU-specific routines.
+"""
 
 def meminfo(logger):
     info = gpustat.GPUStatCollection.new_query().gpus[0]
@@ -37,6 +40,5 @@ def get_fit_gpu_dims(sed_count, mag_count, max_batch_size=256**2):
     batch_size = min(batch_size, max_batch_size)
     block_size = 512
     grid_size = 2**min(15, int(np.ceil(np.log2(batch_size) * 0.5)))
-    print(batch_size, grid_size)
     batch_size = min(block_size * grid_size, batch_size)
     return batch_size, grid_size, block_size

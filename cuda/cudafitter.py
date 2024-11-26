@@ -5,11 +5,18 @@ Created on Wed Sep 23 16:58:52 2020
 
 @author: mints
 """
-from .kernels import get_p_zyt, get_mhat, balance, update_params, fill_2and3
-from .gpu import meminfo, get_fit_gpu_dims
-from numba import cuda
-import numpy as np
 import logging
+
+import numpy as np
+from numba import cuda
+
+from .gpu import get_fit_gpu_dims
+from .gpu import meminfo
+from .kernels import balance
+from .kernels import fill_2and3
+from .kernels import get_mhat
+from .kernels import get_p_zyt
+from .kernels import update_params
 
 
 SQRT_TWOPI = 2.506628274631

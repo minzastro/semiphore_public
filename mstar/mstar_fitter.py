@@ -1,12 +1,14 @@
 #!/usr/bin/env python3
 import sys
-import pylab as plt
+
+import joblib
 import numpy as np
+import pylab as plt
 from scipy.optimize import curve_fit
 from semiphore_public.cuda.cudaprocessor import CudaProcessor
+from semiphore_public.mstar.mstar_func import fun
+from semiphore_public.mstar.mstar_func import fun2
 from semiphore_public.utils.params import LIMITS
-from semiphore_public.mstar.mstar_func import fun, fun2
-import joblib
 
 np.set_printoptions(linewidth=200)
 
@@ -39,8 +41,11 @@ def get_all_fits(processor, band):
                             sigma=np.sqrt(hh[0]+1))
             if fit[0][1] > 0.1 and not np.any(np.isinf(np.diag(fit[1]))):
                 try:
+                    p0 = list(fit[0])
+                    p0.append(hh[0][:5].mean())
+                    p0[1] = b0
                     fit1 = curve_fit(fun2, z_pos, hh[0],
-                                     p0=(*fit[0], 0),
+                                     p0=p0,
                                      sigma=np.sqrt(hh[0]+1))
                     print('+', i, len(z_i), fit1[0], np.diag(fit1[1]))
                 except RuntimeError:

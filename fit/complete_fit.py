@@ -5,10 +5,11 @@ Created on Mon Oct 12 17:56:03 2020
 
 @author: mints
 """
-import logging
 import itertools
-import joblib
+import logging
 import warnings
+
+import joblib
 import numpy as np
 from astropy.utils.exceptions import AstropyUserWarning
 from pandas.core.common import SettingWithCopyWarning

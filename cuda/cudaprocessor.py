@@ -1,15 +1,20 @@
 import os
-import pandas as pd
+
 import numpy as np
-from .cudafitter import CudaFitter
+import pandas as pd
 from semiphore_public.utils.filters import filter_data
-from semiphore_public.utils.params import BANDS, LIMITS, EXTINCTIONS
+from semiphore_public.utils.params import BANDS
+from semiphore_public.utils.params import EXTINCTIONS
+from semiphore_public.utils.params import LIMITS
+
+from .cudafitter import CudaFitter
 
 
 class CudaProcessor():
 
     MAX_ITERATIONS = 300
 
+    # Range of redshifts to work on:
     z = np.arange(0.02, 1.01, 0.02)
 
     def __init__(self, names, n_seds=3):
@@ -118,12 +123,18 @@ class CudaProcessor():
 
     def run_on_data(self, mags, errs, n_seds=None, full_output=False,
                     custom_params=None):
+        """
+        Run on given set of points.
+        """
         if len(mags) < 100:
+            # Too few points for any reliable result.
             return None
         if n_seds is None:
+            # Default value
             n_seds = self.n_seds
         fitter = CudaFitter(mags, errs, n_seds)
         if custom_params is None:
+            # No starting parameters given
             result = fitter.fit(self.MAX_ITERATIONS * n_seds)
         else:
             fitter.params = custom_params

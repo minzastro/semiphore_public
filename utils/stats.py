@@ -1,7 +1,8 @@
-import numpy as np
-from astropy import table
 from glob import glob
+
+import numpy as np
 import pandas as pd
+from astropy import table
 from scipy.stats import binned_statistic
 
 

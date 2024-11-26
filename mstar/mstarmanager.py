@@ -1,6 +1,7 @@
 import joblib
 import numpy as np
 from scipy.integrate import quad
+
 from .mstar_func import fun2
 
 

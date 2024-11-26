@@ -1,4 +1,8 @@
+"""
+Numba-CUDA kernels for semiphore
+"""
 import math
+
 from numba import cuda
 
 SQRT_TWOPI = 2.506628274631
@@ -6,6 +10,9 @@ SQRT_TWOPI = 2.506628274631
 
 @cuda.jit
 def get_mhat(mag, err, sed, sed_err, output):
+    """
+    Calculate m_hat (equation (4)).
+    """
     pos, col = cuda.grid(2)
     if col >= len(sed) or pos >= len(mag):
         return
@@ -39,7 +46,7 @@ def get_p_zyt(m, err, mhat, w, mu, sigma, p_zyt_out):
 
 
 @cuda.jit
-def get_chy2(m, err, mhat, w, mu, sigma, chy2_out):
+def get_chi2(m, err, mhat, w, mu, sigma, chi2_out):
     row, col = cuda.grid(2)
     if col >= len(w) or row >= len(m):
         return
@@ -49,7 +56,7 @@ def get_chy2(m, err, mhat, w, mu, sigma, chy2_out):
             delta2 = err[row, b]**2 + sigma[col, b]**2
             p += (m[row, b] - mhat[row, col] - mu[col, b]) * \
                  (m[row, b] - mhat[row, col] - mu[col, b]) / delta2
-    chy2_out[row, col] = p
+    chi2_out[row, col] = p
 
 
 @cuda.jit
@@ -113,6 +120,9 @@ def update_params(p2, p3, mags, mhat, mu, tmu, tsigma):
 
 @cuda.jit
 def balance_params(p_zyt, p2, tw, tmu, tsigma):
+    """
+    Add denominators in eq (A.7)-(A.9).
+    """
     component, band = cuda.grid(2)
     if component >= tmu.shape[0] or band >= tmu.shape[1]:
         return
@@ -155,5 +165,3 @@ def rebalance_params(tw, tmu, tsigma, min_sigma):
         tmu[pos, i] -= total / count
         if tsigma[pos, i] < min_sigma:
             tsigma[pos, i] = min_sigma
-
-

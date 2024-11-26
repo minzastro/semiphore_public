@@ -9,4 +9,3 @@ def fun(x, a, b, n, h):
 
 def fun2(x, a, b, n, h, s1):
     return fun(x, a, b, n, h) + np.abs(s1) / (1 + np.exp(np.minimum(200, 100 * (x - b))))
-

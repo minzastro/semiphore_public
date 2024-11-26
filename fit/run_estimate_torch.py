@@ -14,12 +14,15 @@ import warnings
 import joblib
 import numpy as np
 import pandas as pd
+import torch
 from numba import cuda
 from semiphore_public.cuda import gpu
 from semiphore_public.mstar.mstarmanager import MStarManager
 from semiphore_public.utils.params import BANDS
 from semiphore_public.utils.params import EXTINCTIONS
 from semiphore_public.utils.params import LIMITS
+from semiphore_public.utils.torchutils import CUDA
+from semiphore_public.utils.torchutils import to_cuda
 
 
 # create logger with 'spam_application'
@@ -61,6 +64,14 @@ def get_mhat(mag, err, sed, sed_err, output):
                 part2 += denom
         output[pos, z, comp] = part1 / part2
 
+def get_mhat_tensor(mag, err, sed, sed_err):
+    denom = 1 / torch.einsum('ik,jhk->ijh',
+                             torch.square(err),
+                             torch.square(sed_err))
+    part1 = torch.nansum(torch.einsum('ik,jhk->ijh', mag, - sed) * denom,
+                         dim=2)
+    part2 = torch.nansum(denom, dim=2)
+    return part1 / part2
 
 @cuda.jit
 def get_p_zyt(mag, err, mhat, w, sed, sed_err, output):
@@ -256,14 +267,12 @@ rowids = np.array(rowids[mask])
 results = []
 
 logger.info("%s data points in the catalogue after filtering" % len(all_mags))
-
 weights = d['weights']
 seds = d['sed']
 sed_errs = d['err']
-cu_w = cuda.to_device(weights)
-cu_sed = cuda.to_device(seds)
-cu_sederr = cuda.to_device(sed_errs)
-
+cu_w = to_cuda(weights)
+cu_sed = to_cuda(seds)
+cu_sederr = to_cuda(sed_errs)
 sed_count = seds.shape[1]
 mag_count = seds.shape[2]
 redshift_count = seds.shape[0]
@@ -290,17 +299,17 @@ time_start_processing = time.process_time()
 total_batches = int(np.ceil(len(all_mags) / batch_size))
 df_result = None
 
-cu_m_star_m_spaces = cuda.to_device(msm.get_m_spaces_as_array())
-cu_m_star_pre = cuda.to_device(msm.get_precomputed(z))
-cu_p_values = cuda.device_array((batch_size, redshift_count))
-cu_mhat = cuda.device_array((batch_size, redshift_count, sed_count))
-cu_p = cuda.device_array((batch_size, redshift_count, sed_count))
-cu_z = cuda.to_device(z)
-cu_m_prior = cuda.device_array((batch_size, sed_count, redshift_count))
-cu_z_estimate = cuda.device_array(batch_size)
-cu_p_est = cuda.device_array(batch_size)
-cu_p_est_noprior = cuda.device_array(batch_size)
-cu_sed_estimate = cuda.device_array(batch_size, dtype=int)
+cu_m_star_m_spaces = to_cuda(msm.get_m_spaces_as_array())
+cu_m_star_pre = to_cuda(msm.get_precomputed(z))
+cu_p_values = torch.empty((batch_size, redshift_count), device=CUDA)
+cu_mhat = torch.empty((batch_size, redshift_count, sed_count), device=CUDA)
+cu_p = torch.empty((batch_size, redshift_count, sed_count), device=CUDA)
+cu_z = to_cuda(z)
+cu_m_prior = torch.empty((batch_size, sed_count, redshift_count), device=CUDA)
+cu_z_estimate = torch.empty(batch_size, device=CUDA)
+cu_p_est = torch.empty(batch_size, device=CUDA)
+cu_p_est_noprior = torch.empty(batch_size, device=CUDA)
+cu_sed_estimate = torch.empty(batch_size, dtype=int, device=CUDA)
 # Configure the blocks
 threadsperblock = block
 blockspergrid_x = grid_size
@@ -313,15 +322,16 @@ for i in range(total_batches):
     batch_mags = all_mags[i*batch_size:(i+1)*batch_size]
     batch_errs = all_errs[i*batch_size:(i+1)*batch_size]
     logger.info("Sending data to GPU")
-    cu_mags = cuda.to_device(np.ascontiguousarray(batch_mags))
-    cu_errs = cuda.to_device(np.ascontiguousarray(batch_errs))
+    cu_mags = to_cuda(batch_mags)
+    cu_errs = to_cuda(batch_errs)
 
-    cuda.synchronize()
 
     logger.info("Running mhat")
-    get_mhat[blockspergrid, threadsperblock](cu_mags, cu_errs,
-                                             cu_sed, cu_sederr,
-                                             cu_mhat)
+    import ipdb; ipdb.set_trace()
+    #get_mhat[blockspergrid, threadsperblock](cu_mags, cu_errs,
+    #                                         cu_sed, cu_sederr,
+    #                                         cu_mhat)
+    cu_mhat = get_mhat_tensor(cu_mags, cu_errs, cu_sed, cu_sederr)
 
     cuda.synchronize()
     logger.info("Running p_zyt")
@@ -353,10 +363,10 @@ for i in range(total_batches):
         'id': ids[i*batch_size:(i+1)*batch_size],
         'rowid': rowids[i*batch_size:(i+1)*batch_size],
         'z': zs[i*batch_size:(i+1)*batch_size],
-        'z_est': cu_z_estimate.copy_to_host()[:current_size],
-        'model': cu_sed_estimate.copy_to_host()[:current_size],
-        'p': cu_p_est.copy_to_host()[:current_size],
-        'p0': cu_p_est_noprior.copy_to_host()[:current_size],
+        'z_est': cu_z_estimate.to('cpu')[:current_size],
+        'model': cu_sed_estimate.to('cpu')[:current_size],
+        'p': cu_p_est.to('cpu')[:current_size],
+        'p0': cu_p_est_noprior.to('cpu')[:current_size],
         'mags': np.isnan(batch_mags).sum(axis=1)
     })
     if df_result is None:
